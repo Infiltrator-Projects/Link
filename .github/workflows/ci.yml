@@ -296,7 +296,7 @@ jobs:
 
   linux-native-adapters:
     name: Linux / native adapter providers
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, linux-native]
     timeout-minutes: 20
     steps:
       - name: Checkout
