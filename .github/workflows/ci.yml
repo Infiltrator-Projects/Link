@@ -274,16 +274,29 @@ jobs:
           mkdir -p release
           touch .archive-should-not-ship
           trap 'rm -f .archive-should-not-ship' EXIT
-          python3 scripts/archive-source.py "release/Link-$version-source.zip"
-          python3 scripts/archive-source.py "$RUNNER_TEMP/link-source-again.zip"
+          # Build the exact-source ZIP packager from owned native C++17.
+          # On a self-hosted runner without headers, use a disposable DEB
+          # extraction; never alter the runner's installed packages.
+          archive_cflags=()
+          archive_libs=(-larchive)
+          if [[ ! -f /usr/include/archive.h ]]; then
+            sysroot="$RUNNER_TEMP/link-archive-sdk"
+            mkdir -p "$sysroot"
+            (cd "$sysroot" && apt-get download libarchive-dev)
+            for deb in "$sysroot"/libarchive-dev_*.deb; do
+              dpkg-deb -x "$deb" "$sysroot/headers"
+            done
+            archive_cflags=("-I$sysroot/headers/usr/include")
+            archive_libs=("-L$sysroot/headers/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" -larchive)
+          fi
+          c++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+            "${archive_cflags[@]}" scripts/archive-source.cpp \
+            -o "$RUNNER_TEMP/link-archive-source" "${archive_libs[@]}"
+          test ! -e scripts/archive-source.py
+          "$RUNNER_TEMP/link-archive-source" "release/Link-$version-source.zip"
+          "$RUNNER_TEMP/link-archive-source" "$RUNNER_TEMP/link-source-again.zip"
           cmp "release/Link-$version-source.zip" "$RUNNER_TEMP/link-source-again.zip"
-          python3 - "$version" <<'PY'
-          import sys, zipfile
-          from pathlib import Path
-          with zipfile.ZipFile("release/Link-" + sys.argv[1] + "-source.zip") as archive:
-              assert not any(".archive-should-not-ship" in name for name in archive.namelist())
-              assert archive.read("Link-" + sys.argv[1] + "/src/infiltratr-common/VERSION") == Path("src/infiltratr-common/VERSION").read_bytes()
-          PY
+          "$RUNNER_TEMP/link-archive-source" --verify "release/Link-$version-source.zip" "$version"
           printf '%s\n' "$GITHUB_SHA" > release/SOURCE_COMMIT
           (cd release && sha256sum *.zip SOURCE_COMMIT > SHA256SUMS.txt)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

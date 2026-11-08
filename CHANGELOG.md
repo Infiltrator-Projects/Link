@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.97 - 2026-11-08
+
+- Replace Python source-archive composition and ZIP verification with a native C++17/libarchive implementation.
+- Preserve exact tracked Git content, immutable nested submodule identities and byte-identical repeated archives.
+
 ## 0.15.96 - 2026-10-17
 
 - Use canonical alpha product and package identities without migration aliases.
