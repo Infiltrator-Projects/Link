@@ -40,6 +40,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Self-hosted runners may lack the GitHub CLI. Extract the distro
+          # package into a per-job temporary directory; never install to /usr.
+          if ! command -v gh >/dev/null 2>&1; then
+            cli_root="$RUNNER_TEMP/link-gh-cli"
+            mkdir -p "$cli_root"
+            (cd "$cli_root" && apt-get download gh)
+            for deb in "$cli_root"/gh_*.deb; do
+              dpkg-deb -x "$deb" "$cli_root/root"
+            done
+            export PATH="$cli_root/root/usr/bin:$PATH"
+          fi
+          gh --version
           git fetch origin main --tags
           head_commit=$(git rev-parse HEAD)
           test "$head_commit" = "$EXPECTED_SHA"
