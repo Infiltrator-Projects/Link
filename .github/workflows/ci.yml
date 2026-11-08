@@ -279,15 +279,27 @@ jobs:
           # extraction; never alter the runner's installed packages.
           archive_cflags=()
           archive_libs=(-larchive)
-          if [[ ! -f /usr/include/archive.h ]]; then
+          arch="$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+          if [[ ! -f /usr/include/archive.h ||
+                ! -e "/usr/lib/$arch/libarchive.so" ]]; then
             sysroot="$RUNNER_TEMP/link-archive-sdk"
             mkdir -p "$sysroot"
-            (cd "$sysroot" && apt-get download libarchive-dev)
-            for deb in "$sysroot"/libarchive-dev_*.deb; do
+            # The headers-only DEB contains a static archive; explicitly
+            # extract the matching shared runtime as well so the linker
+            # never falls through to libarchive.a and its transitive deps.
+            runtime_pkg="$(apt-cache depends libarchive-dev |
+              awk '$1 == "Depends:" && $2 ~ /^libarchive[0-9]/ {print $2; exit}')"
+            test -n "$runtime_pkg"
+            (cd "$sysroot" && apt-get download libarchive-dev "$runtime_pkg")
+            for deb in "$sysroot"/libarchive*.deb; do
               dpkg-deb -x "$deb" "$sysroot/headers"
             done
+            libdir="$sysroot/headers/usr/lib/$arch"
+            test -f "$libdir/libarchive.a"
+            test -e "$libdir/libarchive.so"
             archive_cflags=("-I$sysroot/headers/usr/include")
-            archive_libs=("-L$sysroot/headers/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)" -larchive)
+            archive_libs=("-L$libdir" "-Wl,-rpath,$libdir" -larchive)
+            export LD_LIBRARY_PATH="$libdir:${LD_LIBRARY_PATH:-}"
           fi
           c++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
             "${archive_cflags[@]}" scripts/archive-source.cpp \
